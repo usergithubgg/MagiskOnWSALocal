@@ -40,22 +40,17 @@ require_su() {
 echo "Checking and ensuring dependencies"
 check_dependencies() {
     command -v whiptail >/dev/null 2>&1 || command -v dialog >/dev/null 2>&1 || NEED_INSTALL+=("whiptail")
-    command -v lzip >/dev/null 2>&1 || NEED_INSTALL+=("lzip")
-    command -v patchelf >/dev/null 2>&1 || NEED_INSTALL+=("patchelf")
-    command -v resize2fs >/dev/null 2>&1 || NEED_INSTALL+=("e2fsprogs")
     command -v pip >/dev/null 2>&1 || NEED_INSTALL+=("python3-pip")
     command -v aria2c >/dev/null 2>&1 || NEED_INSTALL+=("aria2")
     command -v 7z >/dev/null 2>&1 || NEED_INSTALL+=("p7zip-full")
-    command -v setfattr >/dev/null 2>&1 || NEED_INSTALL+=("attr")
     command -v unzip >/dev/null 2>&1 || NEED_INSTALL+=("unzip")
-    command -v qemu-img >/dev/null 2>&1 || NEED_INSTALL+=("qemu-utils")
 }
 check_dependencies
 osrel=$(sed -n '/^ID_LIKE=/s/^.*=//p' /etc/os-release)
 declare -A os_pm_install
 # os_pm_install["/etc/redhat-release"]=yum
 os_pm_install["/etc/arch-release"]=pacman
-# os_pm_install["/etc/gentoo-release"]=emerge
+os_pm_install["/etc/gentoo-release"]=emerge
 os_pm_install["/etc/SuSE-release"]=zypper
 os_pm_install["/etc/debian_version"]=apt-get
 # os_pm_install["/etc/alpine-release"]=apk
@@ -63,7 +58,7 @@ os_pm_install["/etc/debian_version"]=apt-get
 declare -A PM_UPDATE_MAP
 PM_UPDATE_MAP["yum"]="check-update"
 PM_UPDATE_MAP["pacman"]="-Syu --noconfirm"
-PM_UPDATE_MAP["emerge"]="-auDN @world"
+PM_UPDATE_MAP["emerge"]="-auDU1 @world"
 PM_UPDATE_MAP["zypper"]="ref"
 PM_UPDATE_MAP["apt-get"]="update"
 PM_UPDATE_MAP["apk"]="update"
@@ -105,7 +100,8 @@ require_su
 if [ -z "$PM" ]; then
     echo "Unable to determine package manager: Unsupported distros"
     abort
-elif [ "$PM" = "pacman" ]; then
+elif [[ "$PM" =~ pacman|emerge ]]; then
+    [ "$PM" = "emerge" ] && (sudo emerge -qoO aria2[adns] || abort)
     i=30
     while ((i-- > 1)) &&
         ! read -r -sn 1 -t 1 -p $'\r:: Proceed with full system upgrade? Cancel after '$i$'s.. [y/N]\e[0K ' answer; do
@@ -129,9 +125,7 @@ if [ -n "${NEED_INSTALL[*]}" ]; then
     if [ "$PM" = "zypper" ]; then
         NEED_INSTALL_FIX=${NEED_INSTALL[*]}
         {
-            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//setools/setools-console} 2>&1
             NEED_INSTALL_FIX=${NEED_INSTALL_FIX//whiptail/dialog} 2>&1
-            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//qemu-utils/qemu-tools} 2>&1
         } >>/dev/null
 
         readarray -td ' ' NEED_INSTALL <<<"$NEED_INSTALL_FIX "
@@ -144,8 +138,17 @@ if [ -n "${NEED_INSTALL[*]}" ]; then
         NEED_INSTALL_FIX=${NEED_INSTALL[*]}
         {
             NEED_INSTALL_FIX=${NEED_INSTALL_FIX//whiptail/libnewt} 2>&1
-            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//qemu-utils/qemu-img} 2>&1
             NEED_INSTALL_FIX=${NEED_INSTALL_FIX//python3-pip/python-pip} 2>&1
+            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//p7zip-full/p7zip} 2>&1
+        } >>/dev/null
+
+        readarray -td ' ' NEED_INSTALL <<<"$NEED_INSTALL_FIX "
+        unset 'NEED_INSTALL[-1]'
+    elif [ "$PM" = "emerge" ]; then
+        NEED_INSTALL_FIX=${NEED_INSTALL[*]}
+        {
+            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//whiptail/dialog} 2>&1
+            NEED_INSTALL_FIX=${NEED_INSTALL_FIX//python3-pip/dev-python/pip} 2>&1
             NEED_INSTALL_FIX=${NEED_INSTALL_FIX//p7zip-full/p7zip} 2>&1
         } >>/dev/null
 
